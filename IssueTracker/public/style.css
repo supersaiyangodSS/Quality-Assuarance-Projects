@@ -3,21 +3,26 @@
   padding: 0px;
 }
 
-body {
-  padding: 10px;
-}
 
+/*
 .issue {
   margin: 20px;
   padding: 5px;
-  width: 60%;
+  width: 80%;
   border: 2px solid black;
 }
 
 .closed {
   background-color: lightgrey;
 }
+*/
 
+.mtop {
+  top: 20%;
+}
+
+/*
 .id {
   font-size: 10.5px;
 }
+*/
