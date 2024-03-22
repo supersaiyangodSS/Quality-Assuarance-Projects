@@ -49,7 +49,7 @@ module.exports = function (app) {
         res.type('txt').send(data.toString());
       });
     });
-
+    
   app.get('/_api/get-tests', cors(), function(req, res, next){
     console.log('requested');
     if(process.env.NODE_ENV === 'test') return next();

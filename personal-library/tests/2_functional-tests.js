@@ -1,184 +1,319 @@
-/*
-*
-*
-*       FILL IN EACH FUNCTIONAL TEST BELOW COMPLETELY
-*       -----[Keep the tests in the same order!]-----
-*       
-*/
-
 const chaiHttp = require('chai-http');
 const chai = require('chai');
 const assert = chai.assert;
 const server = require('../server');
+const myDB = require('../db-connection.js');
+const { ObjectId } = require('mongodb');
+const deleteCollection = require('../cleanDB.js');
 
 chai.use(chaiHttp);
 
-let deleteME;
-
 suite('Functional Tests', function() {
+  this.timeout(5000);
+  let createdIssues = [];
+  let projectName = 'testproject1';
+  
+  test('Create an issue with every field: POST request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
+    let testIssue = {
+        'issue_title': 'Fix first error',
+        'issue_text': 'Posted data has error',
+        'created_by': 'Jim',
+        'assigned_to': 'John',
+        'status_text': 'Evaluating'
+      };
 
-  /*
-  * ----[EXAMPLE TEST]----
-  * Each test should completely test the response of the API end-point including response status code!
-  */
-  test('#example Test GET /api/books', function(done) {
-    chai.request(server)
-      .get('/api/books')
+    requester
+      .post(`/api/issues/${projectName}`)
+      .type('form')
+      .send({ ...testIssue })
       .end((err, res) => {
+        createdIssues.push(res.body);
         assert.equal(res.status, 200);
-        assert.isArray(res.body, 'response should be an array');
-        assert.property(res.body[0], 'commentcount', 'Books in array should contain commentcount');
-        assert.property(res.body[0], 'title', 'Books in array should contain title');
-        assert.property(res.body[0], '_id', 'Books in array should contain _id');
+        assert.equal(res.type, 'application/json');
+        assert.equal(res.body.issue_title, testIssue.issue_title);
+        assert.equal(res.body.issue_text, testIssue.issue_text);
+        assert.equal(res.body.created_by, testIssue.created_by);
+        assert.equal(res.body.assigned_to, testIssue.assigned_to);
+        assert.equal(res.body.status_text, testIssue.status_text);
+        assert.isOk(res.body._id);
+        assert.isOk(res.body.created_on);
+        assert.isOk(res.body.updated_on);
+        assert.equal(res.body.open, true);
         done();
       });
   });
-  /*
-  * ----[END of EXAMPLE TEST]----
-  */
+  
+  test('Create an issue with only required fields: POST request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
+    let testIssue = {
+        'issue_title': 'Fix Second error',
+        'issue_text': 'Posted data definitely has errors',
+        'created_by': 'Jim',
+      };
 
-  suite('Routing tests', function() {
-
-
-    suite('POST /api/books with title => create book object/expect book object', function() {
-
-      test('Test POST /api/books with title', function(done) {
-        chai.request(server)
-          .post('/api/books')
-          .set('content-type', 'application/json')
-          .send({ title: 'post_test' })
-          .end((err, res) => {
-            assert.property(res.body, '_id', 'response should conatain _id');
-            assert.equal(res.body.title, "post_test");
-            deleteME = res.body._id;
-
-            done();
-          })
+    requester
+      .post(`/api/issues/${projectName}`)
+      .type('form')
+      .send({ ...testIssue })
+      .end((err, res) => {
+        createdIssues.push(res.body);
+        assert.equal(res.status, 200);
+        assert.equal(res.type, 'application/json');
+        assert.equal(res.body.issue_title, testIssue.issue_title);
+        assert.equal(res.body.issue_text, testIssue.issue_text);
+        assert.equal(res.body.created_by, testIssue.created_by);
+        assert.equal(res.body.assigned_to, "");
+        assert.equal(res.body.status_text, "");
+        assert.isOk(res.body._id);
+        assert.isOk(res.body.created_on);
+        assert.isOk(res.body.updated_on);
+        assert.equal(res.body.open, true);
+        done();
       });
+  });
+  
+  test('Create an issue with missing required fields: POST request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
+    let testIssue = {
+        'issue_title': '',
+        'issue_text': 'Posted data definitely has errors',
+        'created_by': 'Jim',
+      };
+    let expectedResponse = { error: 'required field(s) missing' };
 
-      test('Test POST /api/books with no title given', function(done) {
-        chai.request(server)
-          .post('/api/books')
-          .end((err, res) => {
-            assert.equal(res.body, 'missing required field title');
-            done();
-          })
+    requester
+      .post(`/api/issues/${projectName}`)
+      .type('form')
+      .send({ ...testIssue })
+      .end((err, res) => {
+        assert.equal(res.status, 200);
+        assert.equal(res.type, 'application/json');
+        assert.deepEqual(res.body, expectedResponse);
+        done();
       });
+  });
+  
+  test('View issues on a project: GET request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
 
-    });
-
-
-    suite('GET /api/books => array of books', function() {
-
-      test('Test GET /api/books', function(done) {
-        chai.request(server)
-          .get('/api/books')
-          .end(function(err, res) {
-            assert.equal(res.status, 200);
-            assert.isArray(res.body, 'response should be an array');
-            assert.property(res.body[0], 'commentcount', 'Books in array should contain commentcount');
-            assert.property(res.body[0], 'title', 'Books in array should contain title');
-            assert.property(res.body[0], '_id', 'Books in array should contain _id');
-            done();
-          });
+    requester
+      .get(`/api/issues/${projectName}`)
+      .end((err, res) => {
+        assert.equal(res.status, 200);
+        assert.equal(res.type, 'application/json');
+        assert.isArray(res.body);
+        assert.deepEqual(res.body[0], createdIssues[0]);
+        assert.deepEqual(res.body[1], createdIssues[1]);
+        done();
       });
+  });
+  
+  test('View issues on a project with one filter: GET request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
 
-    });
-
-
-    suite('GET /api/books/[id] => book object with [id]', function() {
-
-      test('Test GET /api/books/[id] with id not in db', function(done) {//
-
-        chai.request(server)
-          .get('/api/books/61042ee300954e04955e023A')
-          .end(function(err, res) {
-            console.log(res.body);
-            assert.equal(res.status, 200);
-            assert.equal(res.body, 'no book exists');
-            done();
-          });
+    requester
+      .get(`/api/issues/${projectName}`)
+      .query({ issue_title: 'Fix first error' })
+      .end((err, res) => {
+        assert.equal(res.status, 200);
+        assert.equal(res.type, 'application/json');
+        assert.isArray(res.body);
+        assert.equal(res.body.length, 1)
+        assert.deepEqual(res.body[0], createdIssues[0]);
+        done();
       });
+  });
 
-      test('Test GET /api/books/[id] with valid id in db', function(done) {
+  test('View issues on a project with multiple filters: GET request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
 
-        chai.request(server)
-          .get('/api/books/61042ee300954e04955e022e')
-          .end(function(err, res) {
-            assert.equal(res.status, 200);
-            // assert.deepEqual(res.body, 'response should be an array');
-            assert.property(res.body, 'commentcount', 'Book should contain commentcount');
-            assert.property(res.body, 'title', 'Book should contain title');
-            assert.equal(res.body._id, '61042ee300954e04955e022e', 'this book should have the _id:61042ee300954e04955e022e ');
-            done();
-          });
+    requester
+      .get(`/api/issues/${projectName}`)
+      .query({
+        issue_title: 'Fix Second error',
+        created_by: 'Jim'
+      })
+      .end((err, res) => {
+        assert.equal(res.status, 200);
+        assert.equal(res.type, 'application/json');
+        assert.isArray(res.body);
+        assert.equal(res.body.length, 1)
+        assert.deepEqual(res.body[0], createdIssues[1]);
+        done();
       });
+  });
 
-    });
+  test('Update one field on an issue: PUT request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
 
+    requester
+      .put(`/api/issues/${projectName}`)
+      .send({
+        _id: createdIssues[0]._id,
+        assigned_to: 'Trina'
+      })
+      .end((err, res) => {
+        
 
-    suite('POST /api/books/[id] => add comment/expect book object with id', function() {
+        myDB(async client => {
+          const collection = await client.db('issueTracker').collection(projectName);
 
-      test('Test POST /api/books/[id] with comment', function(done) {
-        chai.request(server)
-          .post('/api/books/6104644241414f1d0e1e96de')
-          .set('content-type', 'application/json')
-          .send({ comment: 'post_id_test_comment' })
-          .end((err, res) => {
-            assert.equal(res.body._id, '6104644241414f1d0e1e96de');
-            assert.equal(res.body.title, "POST_ID_TEST_TITLE");
-            assert.equal(res.body.comments[0], 'post_id_test_comment');
-            done();
-          })
+          let updatedIssue = await collection.findOne({ _id: new ObjectId(createdIssues[0]._id) });
+
+          assert.equal(res.status, 200);
+          assert.equal(res.type, 'application/json');
+          assert.deepEqual(res.body, { result: 'successfully updated', _id: createdIssues[0]._id});
+
+          assert.equal(updatedIssue.assigned_to, 'Trina');
+          assert.isAbove(updatedIssue.updated_on, new Date(createdIssues[0].updated_on));
+          done();
+        });
+        
       });
+  });
 
-      test('Test POST /api/books/[id] without comment field', function(done) {
-        chai.request(server)
-          .post('/api/books/6104644241414f1d0e1e96de')
+  test('Update multiple fields on an issue: PUT request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
 
-          .end((err, res) => {
-            assert.equal(res.body, 'missing required field comment');
-            done();
-          });
+    requester
+      .put(`/api/issues/${projectName}`)
+      .send({
+        _id: createdIssues[1]._id,
+        assigned_to: 'Vincent',
+        status_text: 'In progress'
+      })
+      .end((err, res) => {
+        myDB(async client => {
+          const collection = await client.db('issueTracker').collection(projectName);
+
+          let updatedIssue = await collection.findOne({ _id: new ObjectId(createdIssues[1]._id) });
+
+          assert.equal(res.status, 200);
+          assert.equal(res.type, 'application/json');
+          assert.deepEqual(res.body, { result: 'successfully updated', _id: createdIssues[1]._id});
+          assert.equal(updatedIssue.assigned_to, 'Vincent');
+          assert.equal(updatedIssue.status_text, 'In progress');
+          assert.isAbove(updatedIssue.updated_on, new Date(createdIssues[1].updated_on));
+          done();
+        });
       });
-
-      test('Test POST /api/books/[id] with comment, id not in db', function(done) {
-        chai.request(server)
-          .post('/api/books/6104644241414f1d0e1e96dA')
-          .set('content-type', 'application/json')
-          .send({ comment: 'this will not be stored' })
-          .end((err, res) => {
-            assert.equal(res.body, 'no book exists');
-            done();
-          });
-      });
-
-    });
-
-    suite('DELETE /api/books/[id] => delete book object id', function() {
-
-      test('Test DELETE /api/books/[id] with valid id in db', function(done) {
-
-        chai.request(server)
-          .delete(`/api/books/${deleteME}`)
-          .end((err, res) => {
-            assert.equal(res.body, 'delete successful');
-            done();
-          });
-
-      });
-
-      test('Test DELETE /api/books/[id] with  id not in db', function(done) {
-        // ' delete unsuccessful'
-        chai.request(server)
-          .delete(`/api/books/6104644241414f1d0e1e96dA`)
-          .end((err, res) => {
-            assert.equal(res.body, 'no book exists');
-            done();
-          });
-
-      });
-    });
 
   });
+
+  test('Update an issue with missing _id: PUT request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
+
+    requester
+      .put(`/api/issues/${projectName}`)
+      .send({
+        assigned_to: 'Vincent',
+        status_text: 'In progress'
+      })
+      .end((err, res) => {
+        assert.equal(res.status, 200);
+        assert.equal(res.type, 'application/json');
+        assert.deepEqual(res.body, { error: 'missing _id' });
+        done();
+      });
+  });
+
+  test('Update an issue with no fields to update: PUT request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
+
+    requester
+      .put(`/api/issues/${projectName}`)
+      .send({
+        _id: createdIssues[1]._id
+      })
+      .end((err, res) => {
+        assert.equal(res.status, 200);
+        assert.equal(res.type, 'application/json');
+        assert.deepEqual(res.body, { error: 'no update field(s) sent', _id: createdIssues[1]._id });
+        done();
+      });
+  });
+
+  test('Update an issue with an invalid _id: PUT request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
+
+    requester
+      .put(`/api/issues/${projectName}`)
+      .send({
+        _id: 'invalidID',
+        created_by: 'Billy'
+      })
+      .end((err, res) => {
+        assert.equal(res.status, 200);
+        assert.equal(res.type, 'application/json');
+        assert.deepEqual(res.body, { error: 'could not update', _id: 'invalidID' });
+        done();
+      });
+  });
+
+  test('Delete an issue: DELETE request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
+
+    requester
+      .delete(`/api/issues/${projectName}`)
+      .send({
+        _id: createdIssues[0]._id
+      })
+      .end((err, res) => {
+        assert.equal(res.status, 200);
+        assert.equal(res.type, 'application/json');
+        assert.deepEqual(res.body, { result: 'successfully deleted', _id: createdIssues[0]._id });
+        done();
+      });
+  });
+
+  test('Delete an issue with an invalid _id: DELETE request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
+
+    requester
+      .delete(`/api/issues/${projectName}`)
+      .send({
+        _id: 'invalidID'
+      })
+      .end((err, res) => {
+        assert.equal(res.status, 200);
+        assert.equal(res.type, 'application/json');
+        assert.deepEqual(res.body, { error: 'could not delete', _id: 'invalidID' });
+        done();
+      });
+  });
+
+  test('Delete an issue with missing _id: DELETE request to /api/issues/{project}', done => {
+    let requester = chai.request(server).keepOpen();
+
+    requester
+      .delete(`/api/issues/${projectName}`)
+      .send({})
+      .end((err, res) => {
+        assert.equal(res.status, 200);
+        assert.equal(res.type, 'application/json');
+        assert.deepEqual(res.body, { error: 'missing _id' });
+
+        myDB(async client => {
+          const collection = await client.db('issueTracker').collection(projectName);
+    
+          await deleteCollection(collection);
+          done();
+        });
+        
+      });
+  });
+/*
+  test('Clear database collection', done => {
+    myDB(async client => {
+      const collection = await client.db('issueTracker').collection(projectName);
+
+      await deleteCollection(collection);
+      done();
+    });
+    
+  });
+*/
+  
+  
 });

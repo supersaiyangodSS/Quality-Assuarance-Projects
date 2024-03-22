@@ -1,130 +1,161 @@
-/*
-*
-*
-*       Complete the API routing below
-*       
-*       
-*/
-
 'use strict';
-const ObjectID = require('mongodb').ObjectID;
+const { ObjectId } = require('mongodb');
 
-module.exports = function(app, myDataBase) {
+module.exports = function (app, myDataBase) {
 
-  app.route('/api/books')
-    .get(function(req, res) {
-      //response will be array of book objects
-      //json res format: [{"_id": bookid, "title": book_title, "commentcount": num_of_comments },...]
-      myDataBase.find({})
-        .toArray(function(err, result) {
-          if (err) throw err;
-          res.send(result);
-        })
-    })
-
-    .post(function(req, res) {
-      let title = req.body.title;
-      //response will contain new book object including atleast _id and title
-      if (!title)
-        return res.json('missing required field title');
-      myDataBase.insertOne({
-        title: title,
-        comments: [],
-        commentcount: 0
-
-      }, (err, response) => {
-        if (err) {
-          res.send("error");
+  app.route('/api/issues/:project')
+  
+    .get(function (req, res){
+      //console.log(`project: ${req.params.project}`);
+      let collection = myDataBase.collection(req.params.project);
+      let query = {};
+      let issuesArray = [];
+      
+      for (let [key, value] of Object.entries(req.query)) {
+        if (key === '_id') {
+          query[key] = new ObjectId(value);
+        } else {
+          query[key] = value;
         }
-        else {
-          // The inserted document is held within
-          // the ops property of the response
-          const { _id, title } = response.ops[0];
-          return res.json({ _id, title });
-        }
-      })
-    })
-
-    .delete(function(req, res) {
-      //if successful response will be 'complete delete successful'
-      const query = { $and: [{ title: { $ne: 'GET_TEST' } }, { title: { $ne: 'POST_ID_TEST_TITLE' } }] }; //prevent delting documents used in tests
-      myDataBase.deleteMany(query, (err, result) => {
-        if (err) throw err;
-        else return res.json('complete delete successful')
-
-      })
-
-    });
-
-
-
-  app.route('/api/books/:id')
-    .get(function(req, res) {
-      let bookid = req.params.id;
-      //json res format: {"_id": bookid, "title": book_title, "comments": [comment,comment,...]}
-      if (!bookid) {
-        res.json({ error: "missing _id" });
-        return;
+        
       }
-      myDataBase.find({ _id: new ObjectID(bookid) })
-        .toArray(function(err, result) {
-          if (err) throw err;
-          else if (result.length === 0) {
-            return res.json('no book exists')
+
+      collection
+        .find(query)
+        .toArray()
+        .then(resultArray => res.json(resultArray))
+        .catch(err => console.error(err));
+      
+    })
+
+    .post(function (req, res){
+      //console.log(req.params);
+      //console.log(req.body);
+      let collection = myDataBase.collection(req.params.project);
+      if (!req.body.issue_title || !req.body.issue_text || !req.body.created_by) {
+        res.json({ error: 'required field(s) missing' });
+      } else {
+        let timeNow = new Date();
+        let newIssue = {
+          issue_title: req.body.issue_title,
+          issue_text: req.body.issue_text,
+          created_on: timeNow,
+          updated_on: timeNow,
+          created_by: req.body.created_by,
+          assigned_to: req.body.assigned_to || "",
+          open: true,
+          status_text: req.body.status_text || ""
+        };
+
+        collection
+          .insertOne(newIssue)
+          .then(result => {
+            res.json({
+              _id: result.insertedId, ...newIssue
+            });
+          })
+          .catch(err => console.error(err));
+        
+      }
+    })
+    
+    .put(function (req, res){
+      let collection = myDataBase.collection(req.params.project);
+      let updateIssue = {};
+      let updateKeyCount = 0;
+      let updateAbleKeys = [
+        'issue_title',
+        'issue_text',
+        'created_by',
+        'assigned_to',
+        'open',
+        'status_text'
+      ];
+      
+      if (!req.body._id) {
+        res.json({ error: 'missing _id' });
+      } else if (req.body._id.length !== 24) {
+        res.json({
+          error: 'could not update',
+          _id: req.body._id
+        });
+      } else {
+        updateAbleKeys.forEach(el => {
+          if (Object.hasOwn(req.body, el)) {
+            if (el === "open") {
+              updateIssue[el] = req.body[el] === "true" ? true : false;
+            } else {
+              updateIssue[el] = req.body[el];
+            }
+            updateKeyCount ++;
           }
-          else
-            res.send(...result);
-        })
-    })
+        });
+        
+        if (updateKeyCount == 0) {
+          res.json({
+            error: 'no update field(s) sent',
+            _id: req.body._id
+          });
+        } else {
+          updateIssue.updated_on = new Date();
+          const filter = { _id: new ObjectId(req.body._id) };
+          const updateDoc = { $set: { ...updateIssue } };
 
-    .post(function(req, res) {
-      let bookid = req.params.id;
-      let comment = req.body.comment;
-      //json res format same as .get
-      if (!bookid) {
-        res.json({ error: "missing _id" });
-        return;
-      }
-      if (!comment)
-        return res.json('missing required field comment');
-
-      const query = { _id: new ObjectID(bookid) };
-      // Set some fields in that document
-      const update = {
-        $push: { comments: comment },
-        $inc: { commentcount: 1 }
-      };
-      // Return the updated document instead of the original document
-      const options = { returnDocument: 'after' };
-
-      myDataBase.findOneAndUpdate(query, update, options, (err, doc) => {
-        if (err) {
-          throw err;
+          collection
+            .updateOne(filter, updateDoc)
+            .then(result => {
+              console.log(`${result.matchedCount} document(s) matched the filter, updated ${result.modifiedCount} document(s)`);
+              if (result.modifiedCount === 1) {
+                res.json({
+                  result: 'successfully updated',
+                  _id: req.body._id
+                });
+              } else {
+                res.json({
+                  error: 'could not update',
+                  _id: req.body._id
+                });
+              }
+            })
+            .catch(err => {
+              console.error(err);
+              res.json({
+                  error: 'could not update',
+                  _id: req.body._id
+                });
+            });
+          
         }
-        else if (!doc.lastErrorObject.updatedExisting && doc.value == null)
-          return res.json('no book exists')
-
-        //json res format: {"_id": bookid, "title": book_title, "comments": [comment,comment,...]}
-
-
-
-
-        res.json(doc.value);
-      });
-
-
+      }
     })
+    
+    .delete(function (req, res){
+      let collection = myDataBase.collection(req.params.project);
 
-    .delete(function(req, res) {
-      let bookid = req.params.id;
-      //if successful response will be 'delete successful'
-      const query = { _id: new ObjectID(bookid) };
-
-      myDataBase.deleteOne(query, (err, result) => {
-        if (err) throw err;
-        else if (result.deletedCount === 0) return res.json('no book exists')
-        else if (result.deletedCount === 1) return res.json('delete successful')
-      })
+      if (!req.body._id) {
+        res.json({ error: 'missing _id' });
+      } else if (req.body._id.length !== 24) {
+        res.json({
+           error: 'could not delete',
+           _id: req.body._id
+         });
+      } else {
+        collection
+          .deleteOne({ _id: new ObjectId(req.body._id) })
+          .then(result => {
+            if (result.deletedCount === 1) {
+              res.json({
+                result: 'successfully deleted',
+                _id: req.body._id
+              });
+            } else {
+              res.json({
+                error: 'could not delete',
+                _id: req.body._id
+              });
+            }
+          }).catch(err => console.error(err));
+      }
     });
 
   //404 Not Found Middleware
@@ -133,4 +164,5 @@ module.exports = function(app, myDataBase) {
       .type('text')
       .send('Not Found');
   });
+    
 };
